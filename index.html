@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#071827">
+<title>Will I Be Sick? | Scillonian IV</title>
+<style>
+:root{color-scheme:dark;--bg:#071827;--panel:#102b3c;--text:#f4f8fb;--muted:#a9bdc9;--line:#315064}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:linear-gradient(160deg,#0b2638,#061522 70%);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);display:flex;justify-content:center;padding:28px 16px}
+main{width:min(100%,520px);text-align:center}
+.kicker{color:#9dc5d9;text-transform:uppercase;letter-spacing:.16em;font-size:.78rem;font-weight:700;margin:10px 0 8px}
+h1{font-size:clamp(2.6rem,12vw,4.3rem);line-height:.98;letter-spacing:-.06em;margin:0 0 12px}
+.route{color:var(--muted);font-size:1rem;margin:0 0 26px}
+.ship{font-size:2.5rem;margin:10px 0}
+.panel{background:rgba(16,43,60,.88);border:1px solid var(--line);border-radius:24px;padding:25px 20px;box-shadow:0 18px 55px #0005}
+.status{font-size:clamp(3.2rem,16vw,5rem);font-weight:900;letter-spacing:-.06em;line-height:1;margin:6px 0 10px}
+.status.no{color:#68d6a2}.status.maybe{color:#ffd36b}.status.yes{color:#ff7777}.status.loading{color:#d6e6ef}
+.explain{font-size:1.08rem;color:#e1edf3;line-height:1.45;margin:8px auto 20px;max-width:360px}
+.metric{border-top:1px solid var(--line);padding-top:17px;margin-top:14px;color:var(--muted);font-size:.95rem}
+.metric strong{display:block;color:var(--text);font-size:2rem;margin-top:2px}
+.scale{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0 0}
+.scale div{border:1px solid var(--line);border-radius:13px;padding:11px 5px;font-size:.82rem;color:var(--muted)}
+.scale b{display:block;font-size:1rem;margin-bottom:3px;color:var(--text)}
+button{width:100%;border:0;border-radius:14px;padding:15px 18px;margin-top:20px;background:#d9f1ff;color:#082033;font-weight:800;font-size:1rem}
+button:active{transform:scale(.99)}
+.small{font-size:.82rem;color:var(--muted);line-height:1.5;margin:18px 4px 0}
+a{color:#b9e3fa}
+.error{color:#ffb4b4}
+footer{font-size:.75rem;color:#8198a7;line-height:1.5;margin:22px 4px 0}
+</style>
+</head>
+<body>
+<main>
+  <div class="kicker">Penzance → Isles of Scilly</div>
+  <div class="ship" aria-hidden="true">⛴️</div>
+  <h1>WILL I<br>BE SICK?</h1>
+  <p class="route">A simple swell check for the Scillonian IV</p>
+  <section class="panel" aria-live="polite">
+    <div id="status" class="status loading">CHECKING</div>
+    <p id="message" class="explain">Getting today's swell forecast…</p>
+    <div class="metric">Today's forecast peak swell<strong id="height">—</strong><span id="time"></span></div>
+    <div class="scale">
+      <div><b>NO</b>Under 2m</div>
+      <div><b>MAYBE</b>2m–under 3m</div>
+      <div><b>YES</b>3m or more</div>
+    </div>
+    <button id="refresh" type="button">Refresh forecast</button>
+  </section>
+  <p class="small">This checks the highest forecast swell for today at an approximate point on the Scillonian crossing. It is a simple guide, not a guarantee of how the sea or your journey will feel.</p>
+  <footer>
+    Marine forecast provided by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> and its data providers. Data subject to the <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a> licence.
+  </footer>
+</main>
+<script>
+const LAT=49.95, LON=-6.05;
+const statusEl=document.getElementById('status');
+const messageEl=document.getElementById('message');
+const heightEl=document.getElementById('height');
+const timeEl=document.getElementById('time');
+const refreshButton=document.getElementById('refresh');
+function setStatus(kind,label,message){
+  statusEl.className='status '+kind;
+  statusEl.textContent=label;
+  messageEl.textContent=message;
+}
+async function loadForecast(){
+  refreshButton.disabled=true;
+  refreshButton.textContent='Checking…';
+  setStatus('loading','CHECKING',"Getting today's swell forecast…");
+  heightEl.textContent='—'; timeEl.textContent='';
+  try{
+    const url=new URL('https://marine-api.open-meteo.com/v1/marine');
+    url.search=new URLSearchParams({
+      latitude:LAT,longitude:LON,hourly:'swell_wave_height',
+      forecast_days:1,timezone:'Europe/London',cell_selection:'sea'
+    });
+    const response=await fetch(url);
+    if(!response.ok) throw new Error('Forecast service returned an error.');
+    const data=await response.json();
+    const values=data?.hourly?.swell_wave_height||[];
+    const times=data?.hourly?.time||[];
+    const valid=values.map((v,i)=>({v:Number(v),t:times[i]})).filter(x=>Number.isFinite(x.v));
+    if(!valid.length) throw new Error('No swell data is available right now.');
+    const peak=valid.reduce((a,b)=>b.v>a.v?b:a);
+    heightEl.textContent=peak.v.toFixed(1)+' m';
+    if(peak.t){
+      const d=new Date(peak.t);
+      timeEl.textContent='Peak around '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    }
+    if(peak.v>=3){
+      setStatus('yes','YES','Swell is forecast to reach 3m or more today. It could be a rough crossing.');
+    }else if(peak.v>=2){
+      setStatus('maybe','MAYBE','Swell is forecast between 2m and 3m today. Conditions could be uncomfortable for some passengers.');
+    }else{
+      setStatus('no','NO','Swell is forecast to stay below 2m today. A calmer crossing is more likely.');
+    }
+  }catch(err){
+    setStatus('loading','UNAVAILABLE','Sorry, the swell forecast could not be loaded. Please try again shortly.');
+    messageEl.classList.add('error');
+  }finally{
+    refreshButton.disabled=false;
+    refreshButton.textContent='Refresh forecast';
+  }
+}
+refreshButton.addEventListener('click',loadForecast);
+loadForecast();
+setInterval(loadForecast,30*60*1000);
+</script>
+</body>
+</html>
